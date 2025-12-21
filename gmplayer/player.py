@@ -102,7 +102,7 @@ class MidiFilePlayer:
         mid = mido.MidiFile(self.config.midi_file)
         base_tempo = None
 
-        self._log_file_stats(self.config.midi_file)
+        threading.Thread(target=self._log_file_stats_async, daemon=True).start()
 
         for track in mid.tracks:
             for msg in track:
@@ -182,6 +182,14 @@ class MidiFilePlayer:
 
         top_events = ", ".join(f"{key}={value}" for key, value in counter.most_common(5))
         logger.info("Top events in file: %s", top_events)
+
+    def _log_file_stats_async(self) -> None:
+        """Log MIDI file statistics without blocking playback startup."""
+
+        try:
+            self._log_file_stats(self.config.midi_file)
+        except Exception:
+            logger.exception("Unable to log MIDI file statistics")
 
     def _record_stream_event(self, msg: mido.Message) -> None:
         """Track statistics for the outgoing MIDI stream."""
