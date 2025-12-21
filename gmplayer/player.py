@@ -39,6 +39,10 @@ class MidiFilePlayer:
         self._output_port: Optional[mido.ports.BaseOutput] = None
         self._stream_stats = Counter()
         self._start_time: float | None = None
+        self._tempo_scale: float = 1.0
+        self._base_tempo: float | None = None
+        self._transpose = self.config.transpose
+        self._lock = threading.Lock()
 
     @property
     def is_playing(self) -> bool:
@@ -70,7 +74,7 @@ class MidiFilePlayer:
 
     def _transposed(self, msg: mido.Message) -> mido.Message:
         if msg.type in {"note_on", "note_off", "polytouch"}:
-            new_note = max(0, min(127, msg.note + self.config.transpose))
+            new_note = max(0, min(127, msg.note + self._get_transpose()))
             return msg.copy(note=new_note)
         return msg
 
@@ -108,10 +112,9 @@ class MidiFilePlayer:
         if base_tempo is None:
             base_tempo = mido.bpm2tempo(120)
 
-        target_tempo = base_tempo
-        if self.config.bpm:
-            target_tempo = mido.bpm2tempo(self.config.bpm)
-        tempo_scale = target_tempo / base_tempo
+        with self._lock:
+            self._base_tempo = base_tempo
+        self._update_tempo_scale(self.config.bpm)
 
         self._start_time = time.time()
         try:
@@ -126,7 +129,7 @@ class MidiFilePlayer:
                     break
 
                 if msg.time:
-                    time.sleep(msg.time * tempo_scale)
+                    time.sleep(msg.time * self._get_tempo_scale())
 
                 if msg.is_meta:
                     continue
@@ -198,4 +201,41 @@ class MidiFilePlayer:
             self._stream_stats.get("note_off", 0),
             sum(self._stream_stats.values()),
         )
+
+    def set_bpm(self, bpm: Optional[float]) -> None:
+        """Update the playback tempo scale while running."""
+
+        self.config.bpm = bpm
+        self._update_tempo_scale(bpm)
+        if bpm:
+            logger.info("Updated playback BPM to %.2f", bpm)
+        else:
+            logger.info("Reset playback BPM to file tempo")
+
+    def _update_tempo_scale(self, bpm: Optional[float]) -> None:
+        with self._lock:
+            if not self._base_tempo:
+                self._tempo_scale = 1.0
+                return
+            target_tempo = self._base_tempo if bpm is None else mido.bpm2tempo(bpm)
+            self._tempo_scale = target_tempo / self._base_tempo
+
+    def set_transpose(self, transpose: int) -> None:
+        """Update the transpose value applied to outgoing notes."""
+
+        if transpose < -24 or transpose > 24:
+            raise ValueError("transpose must be between -24 and 24 semitones")
+
+        with self._lock:
+            self._transpose = transpose
+            self.config.transpose = transpose
+        logger.info("Updated transpose to %+d semitones", transpose)
+
+    def _get_tempo_scale(self) -> float:
+        with self._lock:
+            return self._tempo_scale
+
+    def _get_transpose(self) -> int:
+        with self._lock:
+            return self._transpose
 
