@@ -58,6 +58,7 @@ class MidiFilePlayer:
         """Stop playback and close resources."""
         self._stop_event.set()
         self._pause_event.clear()
+        self._send_all_notes_off()
         if self._play_thread and self._play_thread.is_alive():
             self._play_thread.join(timeout=1)
         if self._output_port:
@@ -67,6 +68,7 @@ class MidiFilePlayer:
     def pause(self) -> None:
         """Temporarily pause playback."""
         self._pause_event.set()
+        self._send_all_notes_off()
 
     def resume(self) -> None:
         """Resume playback after a pause."""
@@ -238,4 +240,12 @@ class MidiFilePlayer:
     def _get_transpose(self) -> int:
         with self._lock:
             return self._transpose
+
+    def _send_all_notes_off(self) -> None:
+        message = mido.Message("control_change", control=123, value=0, channel=0)
+        for channel in range(16):
+            channel_msg = message.copy(channel=channel)
+            self.synth.handle_midi_message(channel_msg)
+            if self._output_port:
+                self._output_port.send(channel_msg)
 
