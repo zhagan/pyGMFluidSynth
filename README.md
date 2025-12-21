@@ -9,6 +9,7 @@ A minimal Python utility to play General MIDI files using [FluidSynth](https://w
 - Print quick statistics about the MIDI file and playback stream (duration, events, notes).
 - Control playback from a simple UI that supports file selection, BPM override, transpose, and start/pause/stop.
 
+
 ## Requirements
 
 - Python 3.11+
