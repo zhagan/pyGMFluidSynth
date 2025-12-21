@@ -25,7 +25,13 @@ class FluidSynthWrapper:
     def stop(self) -> None:
         """Stop the synthesizer and release resources."""
         self._stop_event.set()
+        self.all_notes_off()
         self.synth.delete()
+
+    def all_notes_off(self) -> None:
+        """Silence all channels."""
+        for channel in range(16):
+            self.synth.cc(channel, 123, 0)
 
     def handle_midi_message(self, msg: mido.Message) -> None:
         """Route a mido message to the synthesizer."""
