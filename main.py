@@ -8,6 +8,7 @@ from typing import Optional
 
 from gmplayer.player import MidiFilePlayer, PlaybackConfig
 from gmplayer.synth import FluidSynthWrapper, MidiInputListener
+from gmplayer.ui import PlayerUI
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,8 +16,9 @@ logger = logging.getLogger(__name__)
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Play GM MIDI files using FluidSynth")
-    parser.add_argument("soundfont", help="Path to a General MIDI soundfont (SF2)")
-    parser.add_argument("midi_file", help="Path to a MIDI file to play")
+    parser.add_argument("--ui", action="store_true", help="Launch the graphical UI instead of the CLI player")
+    parser.add_argument("soundfont", nargs="?", help="Path to a General MIDI soundfont (SF2)")
+    parser.add_argument("midi_file", nargs="?", help="Path to a MIDI file to play")
     parser.add_argument("--audio-driver", help="FluidSynth audio driver (alsa, pulseaudio, coreaudio, etc.)")
     parser.add_argument("--gain", type=float, default=0.5, help="Output gain for FluidSynth (0.0-1.0)")
     parser.add_argument("--bpm", type=float, help="Override tempo in beats per minute")
@@ -31,6 +33,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
+
+    if args.ui:
+        PlayerUI().run()
+        return 0
+
+    if not args.soundfont or not args.midi_file:
+        logger.error("soundfont and midi_file are required when not using --ui")
+        return 1
     synth = FluidSynthWrapper(args.soundfont, audio_driver=args.audio_driver, gain=args.gain)
     midi_input_listener = None
 

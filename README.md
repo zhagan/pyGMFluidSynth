@@ -27,16 +27,20 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
+# CLI playback with logging (including MIDI file and stream statistics)
 python main.py <soundfont.sf2> <song.mid> \
   --audio-driver pulseaudio \
   --bpm 140 \
   --transpose -2 \
   --midi-input "My Keyboard" \
   --midi-output "External Synth"
+
+# Launch the Tkinter UI instead of the CLI
+python main.py --ui
 ```
 
 - `soundfont.sf2`: Path to a General MIDI soundfont.
-- `song.mid`: Path to the MIDI file to play.
+- `song.mid`: Path to the MIDI file to play (omit when using `--ui`).
 - `--audio-driver`: FluidSynth audio driver (e.g., `alsa`, `pulseaudio`, `coreaudio`).
 - `--bpm`: Override the MIDI tempo; if omitted, the file tempo is used.
 - `--transpose`: Shift all notes by the given semitones between -24 and 24.
