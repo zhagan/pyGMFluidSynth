@@ -71,11 +71,20 @@ class PlayerUI:
         controls.columnconfigure(1, weight=1)
 
         Label(controls, text="Tempo (BPM)").grid(row=0, column=0, sticky="w")
-        Entry(controls, textvariable=self.bpm, width=8).grid(row=0, column=1, sticky="w")
+        bpm_entry = Entry(controls, textvariable=self.bpm, width=8)
+        bpm_entry.grid(row=0, column=1, sticky="w")
+        bpm_entry.bind("<FocusOut>", self._bpm_changed)
+        bpm_entry.bind("<Return>", self._bpm_changed)
         Label(controls, text="Transpose").grid(row=0, column=2, padx=(16, 4))
-        ttk.Scale(controls, from_=-24, to=24, variable=self.transpose, orient="horizontal", length=200).grid(
-            row=0, column=3, sticky="ew"
-        )
+        ttk.Scale(
+            controls,
+            from_=-24,
+            to=24,
+            variable=self.transpose,
+            orient="horizontal",
+            length=200,
+            command=lambda _value: self._transpose_changed(),
+        ).grid(row=0, column=3, sticky="ew")
         Label(controls, text="(-24 to +24 semitones)").grid(row=0, column=4, sticky="w", padx=(4, 0))
 
         button_row = Frame(self.root)
@@ -98,6 +107,7 @@ class PlayerUI:
         path = filedialog.askopenfilename(filetypes=[("SoundFonts", "*.sf2"), ("All files", "*.*")])
         if path:
             self.soundfont_path.set(path)
+            self._load_soundfont(pathlib.Path(path))
 
     def _choose_midi(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("MIDI files", "*.mid *.midi"), ("All files", "*.*")])
@@ -140,6 +150,31 @@ class PlayerUI:
 
         self.status.set(f"Playing: {midi_file.name}")
 
+    def _bpm_changed(self, _event=None) -> None:
+        bpm_raw = self.bpm.get()
+        bpm_value = self._parse_bpm(bpm_raw)
+        if bpm_raw.strip() and bpm_value is None:
+            return
+
+        with self._lock:
+            if self.player:
+                self.player.set_bpm(bpm_value)
+        if bpm_value:
+            self.status.set(f"Tempo set to {bpm_value:.2f} BPM")
+        else:
+            self.status.set("Tempo reset to file value")
+
+    def _transpose_changed(self) -> None:
+        try:
+            transpose = int(round(self.transpose.get()))
+        except (ValueError, TypeError):
+            return
+
+        with self._lock:
+            if self.player:
+                self.player.set_transpose(transpose)
+        self.status.set(f"Transpose set to {transpose:+d} semitones")
+
     def pause(self) -> None:
         if self.player:
             self.player.pause()
@@ -161,6 +196,18 @@ class PlayerUI:
         if self.synth:
             self.synth.stop()
         self.root.destroy()
+
+    def _load_soundfont(self, soundfont: pathlib.Path) -> None:
+        soundfont = soundfont.expanduser()
+        if not soundfont.exists():
+            messagebox.showerror("Missing SoundFont", "Please choose a valid SF2 soundfont")
+            return
+
+        with self._lock:
+            if self.player and self.player.is_playing:
+                self.player.stop()
+            self._reset_synth(soundfont)
+        self.status.set(f"Loaded soundfont: {soundfont.name}")
 
     def _reset_synth(self, soundfont: pathlib.Path) -> None:
         if self.synth:
