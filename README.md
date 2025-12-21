@@ -6,6 +6,9 @@ A minimal Python utility to play General MIDI files using [FluidSynth](https://w
 - Expose a MIDI input port that is routed into FluidSynth for live playing.
 - Mirror all events from the MIDI file player to an external MIDI output port.
 - Override BPM and transpose playback up/down by up to 24 semitones.
+- Print quick statistics about the MIDI file and playback stream (duration, events, notes).
+- Control playback from a simple UI that supports file selection, BPM override, transpose, and start/pause/stop.
+
 
 ## Requirements
 
@@ -41,6 +44,27 @@ python main.py <soundfont.sf2> <song.mid> \
 - `--midi-output`: Optional MIDI output port name that receives all playback events.
 
 Press `Ctrl+C` to stop playback.
+
+During startup you will see a small summary of the MIDI file (tracks, tempo, and the most
+common events). When playback finishes, a stream summary is printed showing the number of
+events and notes that were sent along with the elapsed duration.
+
+## Graphical UI
+
+A minimal Tkinter UI is available for loading files and controlling playback.
+
+```bash
+python -m gmplayer.ui
+```
+
+Within the window you can:
+
+- Browse for an SF2 soundfont and MIDI file.
+- Enter a BPM override (leave blank to use the file tempo).
+- Drag the transpose slider between -24 and +24 semitones.
+- Start, pause/resume, or stop playback.
+
+Log messages (including MIDI statistics) stream into the log panel at the bottom of the UI.
 
 ## Notes
 
