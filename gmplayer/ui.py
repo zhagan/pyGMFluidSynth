@@ -136,7 +136,7 @@ class PlayerUI:
 
             config = PlaybackConfig(midi_file=str(midi_file), bpm=bpm_value, transpose=transpose)
             self.player = MidiFilePlayer(self.synth, config)
-            self.player.start()
+            self.player.play()
 
         self.status.set(f"Playing: {midi_file.name}")
 
