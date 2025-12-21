@@ -84,7 +84,9 @@ class MidiFilePlayer:
 
             normalized = msg
             if normalized.type == "note_on" and normalized.velocity == 0:
-                normalized = normalized.copy(type="note_off")
+                data = normalized.dict()
+                data.pop("type", None)
+                normalized = mido.Message("note_off", **data)
 
             normalized = self._transposed(normalized)
             self.synth.handle_midi_message(normalized)
