@@ -6,7 +6,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import mido
 
@@ -27,10 +27,98 @@ class PlaybackConfig:
             raise ValueError("transpose must be between -24 and 24 semitones")
 
 
+@dataclass
+class TrackMetadata:
+    """Lightweight description of a track within a MIDI file."""
+
+    index: int
+    name: str
+    channels: set[int]
+    program_changes: Counter[int]
+    volume: int
+    note_count: int
+
+
+@dataclass
+class MidiMetadata:
+    """Summarized metadata for a MIDI file."""
+
+    length_seconds: float
+    ticks_per_beat: int
+    base_bpm: float
+    tempo_changes: list[float]
+    time_signatures: list[str]
+    key_signatures: list[str]
+    tracks: list[TrackMetadata]
+
+
+def extract_midi_metadata(midi_path: str) -> MidiMetadata:
+    """Parse and summarize metadata from a MIDI file."""
+    mid = mido.MidiFile(midi_path)
+    tempo_events: list[float] = []
+    time_signatures: list[str] = []
+    key_signatures: list[str] = []
+    tracks: list[TrackMetadata] = []
+
+    for index, track in enumerate(mid.tracks):
+        channels: set[int] = set()
+        programs: Counter[int] = Counter()
+        volume = 100
+        note_count = 0
+        name = f"Track {index + 1}"
+        for msg in track:
+            if msg.is_meta:
+                if msg.type == "track_name" and getattr(msg, "name", ""):
+                    name = msg.name
+                elif msg.type == "set_tempo":
+                    tempo_events.append(mido.tempo2bpm(msg.tempo))
+                elif msg.type == "time_signature":
+                    time_signatures.append(f"{msg.numerator}/{msg.denominator}")
+                elif msg.type == "key_signature":
+                    key_signatures.append(msg.key)
+                continue
+
+            if hasattr(msg, "channel"):
+                channels.add(msg.channel)
+            if msg.type == "program_change":
+                programs[msg.program] += 1
+            elif msg.type == "control_change" and msg.control == 7:
+                volume = msg.value
+            elif msg.type == "note_on" and msg.velocity > 0:
+                note_count += 1
+
+        tracks.append(
+            TrackMetadata(
+                index=index,
+                name=name,
+                channels=channels,
+                program_changes=programs,
+                volume=volume,
+                note_count=note_count,
+            )
+        )
+
+    base_bpm = tempo_events[0] if tempo_events else 120
+    return MidiMetadata(
+        length_seconds=mid.length,
+        ticks_per_beat=mid.ticks_per_beat,
+        base_bpm=base_bpm,
+        tempo_changes=tempo_events,
+        time_signatures=time_signatures,
+        key_signatures=key_signatures,
+        tracks=tracks,
+    )
+
+
 class MidiFilePlayer:
     """Play a MIDI file through FluidSynth and optionally mirror to a MIDI output."""
 
-    def __init__(self, synth: FluidSynthWrapper, config: PlaybackConfig):
+    def __init__(
+        self,
+        synth: FluidSynthWrapper,
+        config: PlaybackConfig,
+        event_callback: Optional[Callable[[mido.Message], None]] = None,
+    ):
         self.synth = synth
         self.config = config
         self._stop_event = threading.Event()
@@ -43,6 +131,7 @@ class MidiFilePlayer:
         self._base_tempo: float | None = None
         self._transpose = self.config.transpose
         self._lock = threading.Lock()
+        self._event_callback = event_callback
 
     @property
     def is_playing(self) -> bool:
@@ -152,6 +241,11 @@ class MidiFilePlayer:
                 if self._output_port:
                     self._output_port.send(normalized)
                 self._record_stream_event(normalized)
+                if self._event_callback:
+                    try:
+                        self._event_callback(normalized)
+                    except Exception:
+                        logger.exception("Unable to forward MIDI event to callback")
         finally:
             self._log_stream_stats()
             if self._output_port:
@@ -182,6 +276,24 @@ class MidiFilePlayer:
 
         top_events = ", ".join(f"{key}={value}" for key, value in counter.most_common(5))
         logger.info("Top events in file: %s", top_events)
+
+        metadata = extract_midi_metadata(midi_path)
+        if metadata.time_signatures:
+            logger.info("Time signatures: %s", ", ".join(metadata.time_signatures))
+        if metadata.key_signatures:
+            logger.info("Key signatures: %s", ", ".join(metadata.key_signatures))
+        for track in metadata.tracks:
+            channels = ", ".join(str(ch + 1) for ch in sorted(track.channels)) or "n/a"
+            programs = ", ".join(f"{program}" for program, _count in track.program_changes.most_common()) or "n/a"
+            logger.info(
+                "Track %d '%s' - channels: %s, programs: %s, volume: %d, notes: %d",
+                track.index + 1,
+                track.name,
+                channels,
+                programs,
+                track.volume,
+                track.note_count,
+            )
 
     def _log_file_stats_async(self) -> None:
         """Log MIDI file statistics without blocking playback startup."""
@@ -241,6 +353,13 @@ class MidiFilePlayer:
             self.config.transpose = transpose
         logger.info("Updated transpose to %+d semitones", transpose)
 
+    def send_immediate(self, msg: mido.Message) -> None:
+        """Send a MIDI message immediately to the synth and any configured output."""
+
+        self.synth.handle_midi_message(msg)
+        if self._output_port:
+            self._output_port.send(msg)
+
     def _get_tempo_scale(self) -> float:
         with self._lock:
             return self._tempo_scale
@@ -256,4 +375,3 @@ class MidiFilePlayer:
             self.synth.handle_midi_message(channel_msg)
             if self._output_port:
                 self._output_port.send(channel_msg)
-
